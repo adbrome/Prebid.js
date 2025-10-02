@@ -1,16 +1,16 @@
 import { ortbConverter } from '../libraries/ortbConverter/converter.js';
 import { registerBidder } from '../src/adapters/bidderFactory.js';
 import { BANNER } from '../src/mediaTypes.js';
-import { triggerPixel } from '../src/utils.js';
+import { isArray, isInteger, triggerPixel } from '../src/utils.js';
 
 const BIDDER_CODE = 'adbro';
 const GVLID = 1316;
-const ENDPOINT_URL = 'https://jp.bidbro.me/pbjs';
+const ENDPOINT_URL = 'https://prebid.adbro.me/pbjs';
 
 const converter = ortbConverter({
   context: {
     netRevenue: true,
-    ttl: 30,
+    ttl: 300,
     mediaType: BANNER,
     currency: 'USD',
   },
@@ -23,6 +23,13 @@ const converter = ortbConverter({
 
     return imp;
   },
+  request(buildRequest, imps, bidderRequest, context) {
+    const request = buildRequest(imps, bidderRequest, context);
+
+    request.device.js = 1;
+
+    return request;
+  },
 });
 
 export const spec = {
@@ -32,9 +39,14 @@ export const spec = {
 
   isBidRequestValid(bid) {
     const { params, mediaTypes } = bid;
+    let placementId = params?.placementId;
+    let bannerSizes = mediaTypes?.[BANNER]?.sizes ?? null;
+
+    if (placementId) placementId = Number(placementId);
+
     return Boolean(
-      params && params.placementId &&
-      mediaTypes && mediaTypes[BANNER] && mediaTypes[BANNER].sizes
+      placementId && isInteger(placementId) &&
+      bannerSizes && isArray(bannerSizes) && bannerSizes.length > 0
     );
   },
 
@@ -51,7 +63,6 @@ export const spec = {
         bidRequests: placements[id],
         bidderRequest: bidderRequest,
       });
-      data.device.js = 1;
       result.push({
         method: 'POST',
         url: ENDPOINT_URL + '?placementId=' + id,
@@ -65,12 +76,10 @@ export const spec = {
     if (!response.hasOwnProperty('body') || !response.body.hasOwnProperty('seatbid')) {
       return [];
     }
-    response.body.seatbid.filter(sb => sb.hasOwnProperty('bid')).forEach(sb => sb.bid.forEach(bid => {
-      bid.crid = 'pbjs-1234';
-      bid.adomain = ['adbro.com'];
-      bid.price = 0.1;
-    }));
-    const result = converter.fromORTB({request: request.data, response: response.body}).bids;
+    const result = converter.fromORTB({
+      request: request.data,
+      response: response.body,
+    }).bids;
     return result;
   },
 
